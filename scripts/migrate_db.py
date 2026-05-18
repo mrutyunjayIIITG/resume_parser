@@ -1,8 +1,14 @@
+import os
+from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 import logging
 
+load_dotenv()
+
 # Your Supabase Connection
-DATABASE_URL = "postgresql://postgres:EWhbqnM6IWe5IJaV@db.zqpxnnsbbqdlhememsyj.supabase.co:5432/postgres"
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    raise ValueError("DATABASE_URL environment variable is not set.")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

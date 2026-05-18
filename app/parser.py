@@ -234,7 +234,7 @@ class ResumeParser:
             
         # c. Full-Text Dictionary Scan (Critical for "SEACOM" test without AI)
         # This scans the whole text for anything in our alias map
-        from normalizer import normalizer
+        from app.normalizer import normalizer
         full_text_lower = text.lower()
         for alias in normalizer._alias_map.keys():
             # Look for whole word matches to avoid partial matching (e.g. "py" in "happy")

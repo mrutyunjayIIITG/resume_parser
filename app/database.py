@@ -3,9 +3,15 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 import datetime
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Database URL - Your Supabase Connection
-DATABASE_URL = "postgresql://postgres:EWhbqnM6IWe5IJaV@db.zqpxnnsbbqdlhememsyj.supabase.co:5432/postgres"
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    raise ValueError("DATABASE_URL environment variable is not set.")
+
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
