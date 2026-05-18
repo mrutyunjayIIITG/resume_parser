@@ -85,6 +85,20 @@ async def get_task_status(task_id: str):
         
     return response
 
+@app.get("/api/v1/skills")
+async def list_skills_with_aliases():
+    """Retrieve all canonical skills and their configured aliases."""
+    try:
+        from app.database import get_skills_with_aliases
+        skills = get_skills_with_aliases()
+        return {
+            "count": len(skills),
+            "skills": skills
+        }
+    except Exception as e:
+        logger.error(f"Failed to fetch skills list: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error while fetching skills.")
+
 @app.get("/api/v1/search")
 async def search_candidates(query: str = None, keywords: str = None, top_k: int = 10, threshold: float = 0.2):
     """

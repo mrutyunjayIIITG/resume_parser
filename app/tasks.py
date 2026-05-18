@@ -42,7 +42,17 @@ def process_resume_task(self, filename: str, content_b64: str, file_hash: str):
         vector = embedding_service.generate_resume_vector(result)
 
         # 4. Identity Check & Persistence
-        emails = result.get("contact", {}).get("emails", [])
+        contact = result.get("contact", {}) if isinstance(result, dict) else {}
+        emails = []
+        if isinstance(contact, dict):
+            emails = contact.get("emails", [])
+        elif isinstance(contact, list):
+            # If contact is a flat list, filter out anything containing '@'
+            emails = [item for item in contact if isinstance(item, str) and "@" in item]
+            
+        if not isinstance(emails, list):
+            emails = [emails] if isinstance(emails, str) else []
+            
         primary_email = emails[0] if emails else None
         
         from app.database import check_existing_email

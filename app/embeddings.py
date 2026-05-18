@@ -27,9 +27,29 @@ class EmbeddingService:
         Creates a weighted vector based on Skills and Experience.
         This is what we store for Semantic Search.
         """
-        # We combine skills and roles into a single string for better semantic context
-        skills_str = ", ".join(parsed_data.get("skills", []))
-        roles_str = ", ".join(parsed_data.get("experience", {}).get("detected_roles", []))
+        if not isinstance(parsed_data, dict):
+            return self.generate_embedding("")
+            
+        skills = parsed_data.get("skills", [])
+        if not isinstance(skills, list):
+            skills = []
+        skills_str = ", ".join([str(s) for s in skills if s])
+        
+        experience = parsed_data.get("experience", {})
+        roles = []
+        if isinstance(experience, dict):
+            roles = experience.get("detected_roles", [])
+        elif isinstance(experience, list):
+            for exp in experience:
+                if isinstance(exp, dict):
+                    title = exp.get("role") or exp.get("job_title") or exp.get("title")
+                    if title: roles.append(title)
+                elif isinstance(exp, str):
+                    roles.append(exp)
+                    
+        if not isinstance(roles, list):
+            roles = []
+        roles_str = ", ".join([str(r) for r in roles if r])
         
         combined_text = f"Skills: {skills_str}. Experience: {roles_str}."
         return self.generate_embedding(combined_text)

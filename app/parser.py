@@ -17,8 +17,8 @@ class GeminiRefiner:
         if self.api_key:
             try:
                 genai.configure(api_key=self.api_key)
-                # Use Gemini 3 Flash as seen in dashboard
-                self.model = genai.GenerativeModel('gemini-3-flash')
+                # Use a valid Gemini model
+                self.model = genai.GenerativeModel('gemini-2.5-flash')
             except Exception as e:
                 logger.error(f"Failed to initialize Gemini: {e}")
                 self.model = None
@@ -58,6 +58,25 @@ class GeminiRefiner:
                 result_text = result_text.split("```")[1].split("```")[0].strip()
             
             refined_json = json.loads(result_text)
+            
+            # Ensure it is a dictionary, not a list
+            if isinstance(refined_json, list):
+                if len(refined_json) > 0 and isinstance(refined_json[0], dict):
+                    refined_json = refined_json[0]
+                else:
+                    raise ValueError("Gemini returned a list without a valid dictionary.")
+            
+            # CRITICAL: Merge local skills to ensure Gemini doesn't delete them
+            if "skills" in parsed_data:
+                gemini_skills = refined_json.get("skills", [])
+                if isinstance(gemini_skills, list):
+                    # Combine and deduplicate
+                    combined = list(set(parsed_data["skills"] + gemini_skills))
+                    # Re-run normalizer to ensure any new skills Gemini found are canonicalized
+                    refined_json["skills"] = normalizer.process_list(combined)
+                else:
+                    refined_json["skills"] = parsed_data["skills"]
+                    
             logger.info("Gemini refinement successful.")
             return refined_json
         except Exception as e:

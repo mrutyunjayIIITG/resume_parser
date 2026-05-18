@@ -71,7 +71,16 @@ def save_resume(filename, parsed_data, embedding, file_hash):
         # Convert list to string format [0.1, 0.2, ...] for pgvector
         vector_str = str(embedding) if embedding else None
         
-        emails = parsed_data.get("contact", {}).get("emails", [])
+        contact = parsed_data.get("contact", {}) if isinstance(parsed_data, dict) else {}
+        emails = []
+        if isinstance(contact, dict):
+            emails = contact.get("emails", [])
+        elif isinstance(contact, list):
+            emails = [item for item in contact if isinstance(item, str) and "@" in item]
+            
+        if not isinstance(emails, list):
+            emails = [emails] if isinstance(emails, str) else []
+            
         primary_email = emails[0] if emails else None
         
         record = ResumeRecord(
@@ -109,5 +118,36 @@ def semantic_search_production(query_vector, threshold=0.5, limit=10):
             {"vec": str(query_vector), "thresh": threshold, "lim": limit}
         )
         return [dict(row._mapping) for row in result]
+    finally:
+        db.close()
+
+def get_skills_with_aliases():
+    """Fetches all skills grouped with their aliases and category."""
+    db = SessionLocal()
+    try:
+        # Import models inside function to avoid circular dependencies
+        from app.database import SkillCategory, SkillMaster, SkillAlias
+        
+        categories = {c.id: c.name for c in db.query(SkillCategory).all()}
+        masters = db.query(SkillMaster).all()
+        aliases = db.query(SkillAlias).all()
+        
+        # Group aliases by skill_id
+        skill_aliases = {}
+        for alias in aliases:
+            skill_aliases.setdefault(alias.skill_id, []).append(alias.alias_name)
+            
+        result = []
+        for master in masters:
+            cat_name = categories.get(master.category_id, "Tech Skill")
+            result.append({
+                "id": master.id,
+                "canonical_name": master.canonical_name,
+                "category": cat_name,
+                "aliases": sorted(skill_aliases.get(master.id, []))
+            })
+            
+        # Sort by category and canonical name
+        return sorted(result, key=lambda x: (x["category"], x["canonical_name"]))
     finally:
         db.close()
