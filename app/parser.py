@@ -34,14 +34,15 @@ class GeminiRefiner:
         You are a high-precision HR Data Scientist. RECONSTRUCT the resume JSON with 100% accuracy.
         
         SCHEMA & RULES:
-        - "skills": MUST be technical keywords only (e.g. "ReactJS", "Node.js"). NO sentences or fragments.
-        - "experience": Extract professional titles only.
-        - "education": Find the Degree and University (look for "SEACOM", "University", "B-Tech").
+        - "skills": MUST be technical keywords only.
+        - "skills_detailed": MUST be an array of objects: {{"name": "ReactJS", "years_of_experience": 3}}. Calculate years by cross-referencing where the skill was used in the experience timeline.
+        - "experience_detailed": MUST be an array of objects: {{"role": "Software Engineer", "company": "Google", "start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD", "is_current": false}}. Use null for missing dates. Extract start/end dates strictly from the chronological work history.
+        - "education": Find the Degree and University.
         - "projects": Group the project name and its bullet points correctly.
-        - "certifications": Group certification names (e.g. "Linux for Developers") and providers (e.g. "Coursera").
+        - "certifications": Group certification names and providers.
         
         Original Text:
-        {full_text[:5000]} 
+        {full_text[:6000]} 
         
         Local Parsed JSON (Use as hint):
         {json.dumps(parsed_data, indent=2)}
@@ -263,10 +264,16 @@ class ResumeParser:
         extracted_degrees = []
         extracted_institutes = []
         extracted_roles = []
+        extracted_locations = []
+        extracted_companies = []
         
         for ent in doc.ents:
             if ent.label_ == "DEGREE":
                 extracted_degrees.append(ent.text.strip())
+            elif ent.label_ in ["GPE", "LOC"]:
+                extracted_locations.append(ent.text.strip())
+            elif ent.label_ == "ORG":
+                extracted_companies.append(ent.text.strip())
 
         # 6. Refine Skills
         if sections["skills"]:
@@ -354,5 +361,58 @@ class ResumeParser:
             logger.info(f"Local Dictionary Result (Pre-AI): {initial_result['skills']}")
 
         # 10. Optional LLM Refinement (Passing Full Text for deep scan)
-        return refiner.refine(initial_result, text)
+        refined_result = refiner.refine(initial_result, text)
+        
+        # 11. ATS Normalization Post-Processing
+        ats_data = {
+            "location": {"id": None, "raw": None},
+            "designations": [],
+            "companies": [],
+            "degrees": []
+        }
+        
+        # Location (take the first valid one)
+        for loc in extracted_locations:
+            if len(loc) > 30: continue
+            loc_id, loc_canon = normalizer.normalize_location(loc)
+            if loc_id:
+                ats_data["location"] = {"id": loc_id, "raw": loc, "canonical": loc_canon}
+                break
+        if not ats_data["location"]["id"] and extracted_locations:
+            ats_data["location"]["raw"] = extracted_locations[0]
+            
+        # Designations
+        roles_to_check = list(set(extracted_roles))
+        if "experience" in refined_result and isinstance(refined_result["experience"], list):
+            # Try to extract roles from Gemini's output if it's strings
+            roles_to_check.extend([str(r) for r in refined_result["experience"] if isinstance(r, str)])
+        
+        # Deduplicate
+        roles_to_check = list(set(roles_to_check))
+        
+        for role in roles_to_check:
+            desig_id, desig_canon = normalizer.normalize_designation(role)
+            ats_data["designations"].append({"id": desig_id, "raw": role, "canonical": desig_canon})
+                
+        # Companies
+        # Filter out obvious non-companies
+        valid_companies = [c for c in set(extracted_companies) if len(c) < 50 and "university" not in c.lower() and "college" not in c.lower()]
+        for comp in valid_companies:
+            comp_id, comp_canon = normalizer.normalize_company(comp)
+            ats_data["companies"].append({"id": comp_id, "raw": comp, "canonical": comp_canon})
+                
+        # Degrees
+        degs_to_check = list(set(extracted_degrees))
+        if "education" in refined_result and isinstance(refined_result["education"], list):
+             degs_to_check.extend([str(d) for d in refined_result["education"] if isinstance(d, str)])
+             
+        degs_to_check = list(set(degs_to_check))
+        
+        for deg in degs_to_check:
+            deg_id, deg_canon = normalizer.normalize_degree(deg)
+            ats_data["degrees"].append({"id": deg_id, "raw": deg, "canonical": deg_canon})
+                
+        refined_result["ats_normalized"] = ats_data
+        
+        return refined_result
 

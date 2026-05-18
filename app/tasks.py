@@ -66,7 +66,7 @@ def process_resume_task(self, filename: str, content_b64: str, file_hash: str):
                 "message": f"Candidate with email {primary_email} already exists."
             }
 
-        db_id = save_resume(filename, result, vector, file_hash)
+        db_id = save_resume(filename, result, vector, file_hash, raw_text=text, source="API Upload")
 
         return {
             "status": "completed",
