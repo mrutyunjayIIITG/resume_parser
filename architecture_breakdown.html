@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Architecture Breakdown</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; padding: 40px; max-width: 900px; margin: 0 auto; color: #333; }
+        h1, h2, h3 { color: #2c3e50; border-bottom: 2px solid #eee; padding-bottom: 10px; }
+        .mermaid { margin: 30px 0; text-align: center; background: #f8f9fa; padding: 20px; border-radius: 8px; border: 1px solid #ddd; }
+        .pro-con-box { background: #fdfdfd; padding: 15px; border-left: 4px solid #4CAF50; margin: 20px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        .pro-con-box.cons { border-left: 4px solid #F44336; }
+        ul { padding-left: 20px; }
+        li { margin-bottom: 10px; }
+        @media print {
+            body { padding: 0; }
+            .mermaid { border: none; background: none; }
+            .pro-con-box { box-shadow: none; border: 1px solid #ddd; }
+        }
+    </style>
+    <!-- Include Mermaid.js for rendering diagrams -->
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+    <script>mermaid.initialize({startOnLoad:true});</script>
+</head>
+<body>
+    <h1>Under The Hood: The ATS Pipeline Explained</h1>
+    <p>Here is a visual breakdown of exactly how your ATS processes a resume, comparing the AI Engine against the Free Deterministic Engine.</p>
+
+    <h2>1. WITH Google Gemini AI (The "HR Data Scientist")</h2>
+    <p>When the API Key is present, Gemini acts as the ultimate reader. It can handle chaotic layouts, weird phrasing, and messy sentences with near 100% contextual understanding.</p>
+
+    <div class="mermaid">
+    graph TD
+        A[Candidate Uploads PDF] --> B(PyMuPDF / Tesseract OCR)
+        B --> C[Extracts Raw Messy Text]
+        C --> D{Google Gemini 1.5 Flash}
+        
+        D -->|Contextual Understanding| E[Reads Text like a Human]
+        E --> F[Infers exact Start/End Dates]
+        E --> G[Calculates Years of Experience based on Timeline]
+        E --> H[Fixes Typos & Identifies implicitly stated Skills]
+        
+        F --> I{Entity Normalizer}
+        G --> I
+        H --> I
+        
+        I -->|Validates against Master Dictionaries| J[Database IDs Created]
+        J --> K[(Saved to Supabase)]
+
+        style D fill:#4285F4,color:#fff,stroke:#333,stroke-width:2px
+        style I fill:#34A853,color:#fff,stroke:#333,stroke-width:2px
+    </div>
+
+    <div class="pro-con-box">
+        <strong>Pros:</strong>
+        <ul>
+            <li>Incredible accuracy on dates and experience calculation.</li>
+            <li>Can figure out if a candidate <i>meant</i> "Software Engineer" even if they wrote something vague like "Code Builder".</li>
+        </ul>
+    </div>
+    <div class="pro-con-box cons">
+        <strong>Cons:</strong>
+        <ul>
+            <li>Costs API credits per upload.</li>
+            <li>Takes slightly longer (~5-10 seconds) because of the network request to Google.</li>
+        </ul>
+    </div>
+
+    <br><hr><br>
+
+    <h2>2. WITHOUT Gemini AI (The Custom Heuristics Engine)</h2>
+    <p>When you remove the API Key, the system skips Google and relies entirely on the powerful Custom Heuristics we just wrote (Regex + Spacy + Master Dictionaries).</p>
+
+    <div class="mermaid">
+    graph TD
+        A[Candidate Uploads PDF] --> B(PyMuPDF / Tesseract OCR)
+        B --> C[Extracts Raw Messy Text]
+        
+        C --> D{Custom Heuristic Engine}
+        
+        D -->|Regex Pattern Matching| E[Scans specifically for 'Jan 2020 - Present']
+        D -->|Spacy NLP| F[Guesses Names & Degrees]
+        D -->|Keyword Scanning| G[Looks for Exact Skill Matches]
+        
+        E --> H{Entity Normalizer}
+        F --> H
+        G --> H
+        
+        H -->|Strict Enforcement| I[Deletes Spacy's mistakes e.g. 'JavaScript' as Company]
+        H -->|Maps Valid Entities| J[Database IDs Created]
+        J --> K[(Saved to Supabase)]
+
+        style D fill:#FBBC05,color:#fff,stroke:#333,stroke-width:2px
+        style H fill:#34A853,color:#fff,stroke:#333,stroke-width:2px
+    </div>
+
+    <div class="pro-con-box">
+        <strong>Pros:</strong>
+        <ul>
+            <li>100% Free and runs entirely locally.</li>
+            <li>Lightning fast (processing takes < 1 second).</li>
+            <li>Protected from garbage data by the strict EntityNormalizer dictionary enforcement.</li>
+        </ul>
+    </div>
+    <div class="pro-con-box cons">
+        <strong>Cons:</strong>
+        <ul>
+            <li>Rigid. If a candidate formats their dates weirdly (e.g., Start: 12-20-19 End: 01-05-23), the Regex might miss it.</li>
+            <li>Can only extract skills that are explicitly written in the resume. Cannot infer contextual experience easily.</li>
+        </ul>
+    </div>
+
+</body>
+</html>

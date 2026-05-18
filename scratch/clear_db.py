@@ -6,7 +6,7 @@ def clear_database():
     print("Connecting to database...")
     with engine.connect() as connection:
         print("Clearing 'resumes' table...")
-        connection.execute(text("TRUNCATE TABLE resumes RESTART IDENTITY;"))
+        connection.execute(text("TRUNCATE TABLE resumes RESTART IDENTITY CASCADE;"))
         connection.commit()
     print("Database cleared successfully! You can now start fresh.")
 
