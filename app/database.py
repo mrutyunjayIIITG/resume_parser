@@ -114,6 +114,7 @@ class Candidate(Base):
     raw_current_designation = Column(String)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     source = Column(String, default="Direct Upload")
+    work_authorization = Column(String, nullable=True)
     # Keeping reference to the original raw parse if needed
     resume_record_id = Column(Integer, ForeignKey("resumes.id"), nullable=True)
 
@@ -205,6 +206,7 @@ def save_resume(filename, parsed_data, embedding, file_hash, raw_text=None, sour
             phone=phone,
             current_location_id=ats_data.get("location", {}).get("id"),
             raw_current_location=ats_data.get("location", {}).get("raw"),
+            work_authorization=parsed_data.get("work_authorization"),
             resume_record_id=record.id,
             source=source
         )

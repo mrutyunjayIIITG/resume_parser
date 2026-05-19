@@ -11,13 +11,14 @@ logger = logging.getLogger(__name__)
 embedding_service = EmbeddingService()
 
 @celery_app.task(name="app.tasks.process_resume_task", bind=True)
-def process_resume_task(self, filename: str, content_b64: str, file_hash: str):
+def process_resume_task(self, filename: str, content_b64: str, file_hash: str, metadata: dict = None):
     """
     Background task to process a resume.
     Arguments:
         filename: Name of the file
         content_b64: Base64 encoded file content (since Celery needs serializable args)
         file_hash: The pre-calculated SHA256 hash
+        metadata: Optional dictionary of external metadata (e.g. from Dice/Monster)
     """
     import base64
     content = base64.b64decode(content_b64)
@@ -37,6 +38,32 @@ def process_resume_task(self, filename: str, content_b64: str, file_hash: str):
             logger.warning(f"Extracted text is too short: '{text}'")
             
         result = ResumeParser.parse(text)
+
+        # Merge external metadata (e.g., from Dice/Monster) into the parsed result
+        if metadata and isinstance(metadata, dict):
+            logger.info(f"Merging external metadata into parsed result: {metadata}")
+            
+            # Merge Work Authorization (Highest priority)
+            if "work_authorization" in metadata and metadata["work_authorization"]:
+                result["work_authorization"] = metadata["work_authorization"]
+                
+            # Merge Location (Highest priority)
+            if "location" in metadata and metadata["location"]:
+                loc_val = metadata["location"]
+                if "ats_normalized" not in result:
+                    result["ats_normalized"] = {}
+                from app.normalizer import normalizer
+                loc_id, loc_canon = normalizer.normalize_location(loc_val)
+                result["ats_normalized"]["location"] = {
+                    "id": loc_id,
+                    "raw": loc_val,
+                    "canonical": loc_canon or loc_val
+                }
+
+            # Merge other custom sourcing fields
+            for custom_field in ["target_rate", "availability", "tax_terms", "relocation_willingness"]:
+                if custom_field in metadata:
+                    result[custom_field] = metadata[custom_field]
 
         # 3. Embedding
         vector = embedding_service.generate_resume_vector(result)

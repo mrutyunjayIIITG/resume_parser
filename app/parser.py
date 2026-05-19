@@ -40,6 +40,7 @@ class GeminiRefiner:
         - "education": Find the Degree and University.
         - "projects": Group the project name and its bullet points correctly.
         - "certifications": Group certification names and providers.
+        - "work_authorization": Detect and classify the candidate's US work authorization status. Map it strictly to one of: ["US Citizen", "Green Card", "H1B", "H4 EAD", "L2 EAD", "OPT EAD", "CPT", "TN Visa"] or null if not explicitly mentioned in the CV. Do NOT guess or assume if it is not explicitly stated.
         
         Original Text:
         {full_text[:6000]} 
@@ -86,6 +87,86 @@ class GeminiRefiner:
 
 # Initialize Refiner
 refiner = GeminiRefiner()
+
+US_WORK_AUTH_PATTERNS = {
+    "US Citizen": [
+        r"\bu\.?\s*s\.?\s*citizen\b",
+        r"\bcitizenship\s*:\s*(u\.?\s*s\.?\s*a?|united\s+states)\b",
+        r"\bus\s+citizen\b",
+        r"\bvalid\s+usc\b"
+    ],
+    "Green Card": [
+        r"\bgreen\s*card\b",
+        r"\bpermanent\s+resident\b",
+        r"\bgc\s+holder\b",
+        r"\bgc\b(?!\s*-\s*ms)\b(?!\s+analysis\b)"
+    ],
+    "H1B": [
+        r"\bh1\s*b\b",
+        r"\bh-1b\b",
+        r"\bh1b\s+visa\b"
+    ],
+    "H4 EAD": [
+        r"\bh4\s*ead\b",
+        r"\bh-4\s*ead\b"
+    ],
+    "GC EAD": [
+        r"\bgc\s*ead\b"
+    ],
+    "L2 EAD": [
+        r"\bl2\s*ead\b",
+        r"\bl-2\s*ead\b"
+    ],
+    "OPT EAD": [
+        r"\bopt\s+ead\b",
+        r"\bstem\s+opt\b",
+        r"\bf1\s+opt\b",
+        r"\bopt\b(?!\s+(?:optimization|compiler|design|skills))\b"
+    ],
+    "CPT": [
+        r"\bcpt\b",
+        r"\bcurricular\s+practical\s+training\b"
+    ],
+    "TN Visa": [
+        r"\btn\s+visa\b",
+        r"\btn-1\b",
+        r"\btn-2\b"
+    ],
+    "EAD": [
+        r"\bead\b",
+        r"\bemployment\s+authorization\s+document\b"
+    ]
+}
+
+def extract_work_authorization(text: str) -> str:
+    """
+    Scans the raw resume text using heuristics to detect US work authorization.
+    """
+    text_lower = text.lower()
+    
+    # 1. Context-based scan (high precision)
+    context_lines = []
+    lines = text.split('\n')
+    for line in lines:
+        line_lower = line.lower()
+        if any(kw in line_lower for kw in ["work permit", "authorization", "visa status", "legal status", "citizenship", "visa:"]):
+            context_lines.append(line_lower)
+            
+    if context_lines:
+        context_block = "\n".join(context_lines)
+        for canonical, patterns in US_WORK_AUTH_PATTERNS.items():
+            for pattern in patterns:
+                if re.search(pattern, context_block):
+                    return canonical
+                    
+    # 2. Document-wide scan (fallback with safe word boundary regexes)
+    for canonical, patterns in US_WORK_AUTH_PATTERNS.items():
+        for pattern in patterns:
+            if re.search(pattern, text_lower):
+                return canonical
+                
+    return None
+
 
 def create_nlp_pipeline():
     """Initializes a spaCy pipeline with custom entity rules for resume parsing."""
@@ -388,6 +469,7 @@ class ResumeParser:
             "skills": sorted(list(set([s.strip().title() for s in extracted_skills if len(s.strip()) > 1]))),
             "certifications": sorted(list(set([c.strip() for c in sections["certifications"].split('\n') if len(c.strip()) > 5]))),
             "projects": [f"{p['title']}: {' '.join(p['description'])}" for p in projects_detailed] if projects_detailed else [p.strip() for p in sections["projects"].split('\n') if len(p.strip()) > 10],
+            "work_authorization": extract_work_authorization(text),
             "word_count": len(text.split())
         }
 
@@ -408,6 +490,9 @@ class ResumeParser:
 
         # Optional LLM Refinement (Skipped if key is missing)
         refined_result = refiner.refine(initial_result, text)
+        
+        # Hybrid strategy fallback resolution
+        refined_result["work_authorization"] = refined_result.get("work_authorization") or initial_result.get("work_authorization")
         
         # ATS Normalization Post-Processing
         ats_data = {

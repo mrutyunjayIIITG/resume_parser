@@ -45,6 +45,15 @@ def run_migration():
             print(f"Skipped (already exists or error): {e}")
             conn.rollback()
 
+        try:
+            print("Adding work_authorization to candidates...")
+            conn.execute(text("ALTER TABLE candidates ADD COLUMN work_authorization VARCHAR;"))
+            conn.commit()
+            print("Success!")
+        except Exception as e:
+            print(f"Skipped (already exists or error): {e}")
+            conn.rollback()
+
 if __name__ == "__main__":
     run_migration()
     print("Migration complete!")

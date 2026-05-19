@@ -32,11 +32,13 @@ try:
 except Exception as e:
     logger.warning(f"Database connection issues: {e}")
 
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+
 @app.post("/api/v1/extract")
-async def extract_resume(file: UploadFile = File(...)):
+async def extract_resume(file: UploadFile = File(...), metadata: str = Form(None)):
     """
     Primary endpoint for resume extraction.
-    Supports PDF, DOCX, and Images.
+    Supports PDF, DOCX, and Images. Accepts optional external metadata (e.g., from Dice/Monster).
     """
     logger.info(f"Processing file: {file.filename}")
     content = await file.read()
@@ -54,10 +56,19 @@ async def extract_resume(file: UploadFile = File(...)):
             "message": "Resume already exists in database (exact file match)."
         }
 
-    # 1. Dispatch Task to Worker
+    # 1. Parse optional metadata string to dict
+    metadata_dict = None
+    if metadata:
+        try:
+            metadata_dict = json.loads(metadata)
+            logger.info(f"Received external metadata: {metadata_dict}")
+        except Exception as e:
+            logger.warning(f"Failed to parse metadata string: {e}")
+
+    # 2. Dispatch Task to Worker
     try:
         content_b64 = base64.b64encode(content).decode('utf-8')
-        task = process_resume_task.delay(file.filename, content_b64, file_hash)
+        task = process_resume_task.delay(file.filename, content_b64, file_hash, metadata_dict)
         
         return {
             "status": "accepted",
@@ -197,10 +208,27 @@ async def search_candidates(query: str = None, keywords: str = None, top_k: int 
 
     # 3. Final Scoring & Truncation
     # Convert similarity to 0-100 score
-    for res in results:
-        res["score"] = round(res.get("similarity", 0) * 100, 1)
-        # Clean up sensitive data for UI
-        if "embedding" in res: del res["embedding"]
+    from app.database import SessionLocal, Candidate
+    db_session = SessionLocal()
+    try:
+        for res in results:
+            res["score"] = round(res.get("similarity", 0) * 100, 1)
+            # Clean up sensitive data for UI
+            if "embedding" in res: del res["embedding"]
+            
+            # Enrich with Candidate table columns
+            email = res.get("email")
+            candidate = db_session.query(Candidate).filter(Candidate.email == email).first() if email else None
+            if candidate:
+                res["work_authorization"] = candidate.work_authorization
+                res["location"] = candidate.raw_current_location
+                res["total_experience_years"] = candidate.total_experience_years
+            else:
+                res["work_authorization"] = None
+                res["location"] = None
+                res["total_experience_years"] = None
+    finally:
+        db_session.close()
 
     # Sort by score and limit
     results = sorted(results, key=lambda x: x["score"], reverse=True)[:top_k]
@@ -245,6 +273,11 @@ async def search_page():
             .score-badge { background: rgba(56, 189, 248, 0.1); border: 1px solid var(--accent); color: var(--accent); padding: 0.5rem 1rem; border-radius: 20px; font-weight: 700; font-size: 1.2rem; }
             .skill-tag { display: inline-block; background: #334155; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 0.75rem; margin-right: 0.4rem; margin-top: 0.5rem; border: 1px solid transparent; }
             .skill-tag.matched { background: rgba(56, 189, 248, 0.2); border-color: var(--accent); color: white; font-weight: 600; box-shadow: 0 0 10px rgba(56, 189, 248, 0.3); }
+            
+            .badge { display: inline-block; padding: 0.3rem 0.7rem; border-radius: 20px; font-size: 0.8rem; font-weight: 600; margin-right: 0.5rem; margin-top: 0.5rem; border: 1px solid transparent; }
+            .visa-badge { background: rgba(56, 189, 248, 0.15); border-color: var(--accent); color: var(--accent); }
+            .loc-badge { background: rgba(244, 63, 94, 0.15); border-color: #f43f5e; color: #f43f5e; }
+            .exp-badge { background: rgba(168, 85, 247, 0.15); border-color: #a855f7; color: #a855f7; }
             
             #loader { display: none; text-align: center; padding: 2rem; color: var(--accent); font-weight: bold; }
             .empty-state { text-align: center; padding: 4rem; color: var(--muted); }
@@ -318,6 +351,11 @@ async def search_page():
                                 <div class="info">
                                     <h3>${res.candidate_name || 'Anonymous Candidate'}</h3>
                                     <p>${res.email || 'No email provided'}</p>
+                                    <div style="margin-top:0.5rem; display: flex; flex-wrap: wrap;">
+                                        ${res.work_authorization ? `<span class="badge visa-badge">${res.work_authorization}</span>` : ''}
+                                        ${res.location ? `<span class="badge loc-badge">📍 ${res.location}</span>` : ''}
+                                        ${res.total_experience_years ? `<span class="badge exp-badge">💼 ${res.total_experience_years} Yrs Exp</span>` : ''}
+                                    </div>
                                     <div style="margin-top:0.8rem">${skills}</div>
                                 </div>
                                 <div class="score-badge">${res.score}% Match</div>
